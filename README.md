@@ -59,7 +59,12 @@ Layer B 会**往会话里发一条消息**（用户可见），所以限流类�
 ## 安装
 
 ```powershell
-# 在本插件所在会话里（推荐）：
+# 推荐：从 GitHub 发布包安装（任意 DSH 会话里）：
+plugin_manager install_bundle "https://github.com/good-saltfish/dsh-auto-rerun/releases/latest/download/dsh-auto-rerun-1.8.3.tgz"
+```
+
+```powershell
+# 或本地目录（开发调试用）：
 plugin_manager install_bundle "D:\\myproject\\dsh-auto-rerun"
 ```
 
