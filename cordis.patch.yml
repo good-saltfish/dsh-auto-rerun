@@ -1,0 +1,99 @@
+# dsh-auto-rerun — 模型断连自动重跑
+#
+# Host-side only bundle. Registers one plugin row whose config is the single
+# source of truth; edit this entry (or the Plugins page row config) to tune.
+#
+# 分层设计（与内置 @deepseek-ai/dsh-llm-retry 互补，不冲突）：
+#   Layer A — agent/request-error 瀑布上，先 next() 委托内置重试；只有当下游
+#             让出终态且失败属于断连类时才接管，追加更长退避的 retry。
+#   Layer B — 请求仍终态失败（agent/error）后，按 cap 调度一次 followup，
+#             让 Agent 新开回合自动续跑未完成任务。该层会往会话里发消息，
+#             因此限流类（rerunExcludeCodes，默认 RATE_LIMIT / HTTP 429）
+#             不发消息，只交给 Layer A 静默重试。
+#
+# config 键见 index.js 顶部 DEFAULTS 与 README.md。
+- insert:
+    - id: auto-rerun
+      name: dsh-auto-rerun
+      config:
+        enabled: true
+        retries: 3
+        reruns: 1
+        rerunExcludeCodes: [RATE_LIMIT]
+        initialDelayMs: 5000
+        maxDelayMs: 60000
+        backoffFactor: 2
+        jitterRatio: 0.2
+        # 限流类（429/RATE_LIMIT）单独用的静默长退避：tpm 配额一分钟才清零，
+        # 短窗口硬撞必死；接入后可跨过限流。全程不发消息不打扰。
+        rateLimitInitialDelayMs: 30000
+        rateLimitMaxDelayMs: 180000
+        # provider 在失败文本里自带的退避指令（如 Qoder 的
+        # "queued (retry in ~3s)"）优先于上面的类窗口：队列忙类几秒就好，
+        # 用 30s 长窗口硬等只会白烧重试预算。
+        honorMessageRetryHint: true
+        # 从失败文本里解析出的等待时长夹在这个区间内：提示常写成 "retry in ~3s"，
+        # 直接采信会被小值带着空转，也会被离谱大值把回合挂死。
+        messageHintMinMs: 1000
+        messageHintMaxMs: 60000
+        # 路线"忙"不是网络断线：限流/队列忙会在几十秒到几分钟内恢复，用
+        # "3 次就收工"的计数预算必然把回合打断（实测 qiniu 429 三次 26s/62s/103s
+        # 后直接 close the turn）。所以拥塞类（429/RATE_LIMIT，或失败文本自带
+        # 退避提示）改用时间预算：只要还在持续重连，就一直连下去；只有连续
+        # 这么久都没能发出一次重连尝试才放弃。计数预算只管普通断连。
+        # 注意：下面 retryUntilSuccess 为 true（默认）时，这条预算不生效，
+        # 只有把它关掉才回到这套计数/时间预算制。
+        busyRouteBudgetMs: 600000
+        # 老大的核心场景（原话）："同一个模型、同一个会话内，只要不是一定的报错
+        # 就一直重试 —— 用免费模型，容易堵塞，让它一直试到运行成功"。
+        # 默认 true：非死路的断连类失败不再受 retries / busyRouteBudgetMs 拦截，
+        # 一直按封顶退避重连直到这一轮成功（限流 180s、提示 60s、普通断连 60s，
+        # 所以是礼貌节奏，不会打爆端点）。日志预算栏显示 until-success #N。
+        # "一定的报错"= 死路信号（401/403、订阅过期、key 无效、永久没额度），
+        # 由 deadRouteReason() 判定，仍然立刻停手把错误交还宿主 —— 重试一万次
+        # 也一样，继续等只会把会话钉死。
+        retryUntilSuccess: true
+        # 但"一直重试"必须有尽头：路线彻底坏掉时，无限静默重连等于把错误藏起来
+        # （用户看不到任何报错，只觉得卡住）。所以给一个天花板：连续这么久都没
+        # 跑通过一条请求，就把失败交还宿主，让用户看见真实错误。
+        # 0 = 不设天花板（真的永远重试，不推荐）。
+        retryUntilSuccessMaxMs: 7200000
+        # 选模型重试：1.6.0 起默认关（老大要的是守着一个模型硬扛，不是自动换模型；
+        # 实测会自动换出 "[model changed: …]" 通知，那不是他要的）。
+        # 想要就写 enabled: true。开启后换路线的时机有二：
+        #   ① 普通模式：一条路线把自己那份 retries 计数预算用完（且连败
+        #      fallbackAfterFailures 次）；
+        #   ② retryUntilSuccess 模式：计数预算永不耗尽，所以改用时间 —— 在同一
+        #      条路线上连续失败超过 fallbackAfterMs 才换（否则开关会静默失效）。
+        # 换完重置计数预算与新路线自己的时间窗口。走宿主的 model/selection 切换
+        # （会话里会出现 "[model changed …]" 通知，模型选择器也会跟着变），不偷偷改路由。
+        # fallbackRoutes 留空则按 llm 目录自动挑：优先"同 model id 的另一 provider"
+        # （行为不变、配额独立，才真能躲开限流）。单次事故最多换 fallbackMaxSwitches 次。
+        # 死路路线（401/403、订阅过期、key 失效、额度耗尽）不等计数预算立刻换，
+        # 换不动的路线进 30 分钟黑名单，见 README「死路信号」。
+        modelFallback:
+          enabled: false
+        fallbackRoutes: []
+        fallbackAfterFailures: 2
+        # retryUntilSuccess 模式下"在这条路线上熬够多久才认输换路线"。设太小会在
+        # 一次短暂拥塞里就换掉模型（换模型有代价：答复风格变、会话里留通知）；设太
+        # 大则长时间卡在坏路线上。5 分钟是"已经明显跑不通"的量级；现在默认关着
+        # 选模型重试，改这个值不会有任何影响。
+        fallbackAfterMs: 300000
+        fallbackMaxSwitches: 2
+        # true = 允许换到"另一个模型"（回合不中断，但答复质量会变，切换在会话里可见）。
+        # false = 只换"同 model id 的另一 provider"，答复质量绝不悄悄变化。
+        fallbackAnyModel: true
+        # 两次失败间隔超过这么久就算"新事故"，计数/空闲预算全部重来。别设太小，
+        # 否则持续拥塞会被切成一次次"新事故"。
+        incidentGapMs: 60000
+        rerunDelayMs: 3000
+        # 可选：把每次决策逐行写进日志文件（纯调试用，默认不写盘）。
+        # 打开就把下面这行的注释去掉，并把路径改成你自己机器上的绝对路径。
+        # 测试时另开一个终端：Get-Content "<你的路径>" -Wait -Tail 20
+        # logFile: C:\path\to\auto-rerun.log
+        #
+        # 面板开关的落盘位置。留空 = 有 logFile 就放它同目录，否则放
+        # ${DSH_HOME:-~/.dsh}/auto-rerun-settings.json（宿主自己的数据目录）。
+        # 想让开关只活在内存里，就显式写 settingsFile: ""
+        # settingsFile: C:\path\to\auto-rerun-settings.json

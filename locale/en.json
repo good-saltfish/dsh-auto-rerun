@@ -1,0 +1,4 @@
+{
+  "name": "Auto Rerun",
+  "description": "Automatically retries disconnect-class model failures: long-tail request retries after the built-in retry, plus an automatic follow-up that resumes interrupted work."
+}
