@@ -1,5 +1,8 @@
 # dsh-auto-rerun — 模型断连自动重跑
 
+[![npm](https://img.shields.io/npm/v/dsh-auto-rerun.svg)](https://www.npmjs.com/package/dsh-auto-rerun)
+[![license](https://img.shields.io/npm/l/dsh-auto-rerun.svg)](LICENSE)
+
 DeepSeek Harness 宿主插件。当模型请求因**断连类故障**（网络断开、代理/VPN 重启、
 限流、5xx 服务错误、流中断、超时）失败时自动恢复，不让任务死在一条红字上。
 
@@ -85,9 +88,14 @@ Layer B 会**往会话里发一条消息**（用户可见），所以限流类�
 
 ## 安装
 
+已发布到 npm，也可以直接从 GitHub 发布包装：
+
 ```powershell
-# 推荐：从 GitHub 发布包安装（任意 DSH 会话里）：
-plugin_manager install_bundle "https://github.com/good-saltfish/dsh-auto-rerun/releases/download/v1.8.4/dsh-auto-rerun-1.8.4.tgz"
+# 推荐一：从 npm 安装（任意 DSH 会话里）
+plugin_manager install_bundle "dsh-auto-rerun"
+
+# 推荐二：从 GitHub 发布包安装（不依赖 npm）
+plugin_manager install_bundle "https://github.com/good-saltfish/dsh-auto-rerun/releases/download/v1.8.5/dsh-auto-rerun-1.8.5.tgz"
 ```
 
 ```powershell
@@ -276,6 +284,15 @@ node dev\smoke.mjs "<插件目录>\index.js"                  # 201 passed / 0 f
   （守卫检测到别处改了路线就丢弃 override，不跟你抢）。
 
 ## 变更记录
+
+### 1.8.5 — 发布到 npm，README 与徽章同步
+
+- 包已发布到 npm：`npm i dsh-auto-rerun` 或 `plugin_manager install_bundle "dsh-auto-rerun"`。
+  之前的 1.8.4 tarball 里带的是加 npm 安装说明之前的旧 README，这一版把 README
+  原样重新发一遍，保证 registry 上看到的就是仓库里的内容。
+- README 顶部加 npm 版本与许可证徽章；安装段改为「npm 优先、GitHub 发布包次之、
+  本地目录用于开发」，并写明三种方式各自适用场景。
+- 无代码改动：`index.js` / `client.js` 与 1.8.4 完全一致。
 
 ### 1.8.4 — 截图进仓库与插件市场（纯文档/元数据，无行为改动）
 
