@@ -87,12 +87,12 @@ Layer B 会**往会话里发一条消息**（用户可见），所以限流类�
 
 ```powershell
 # 推荐：从 GitHub 发布包安装（任意 DSH 会话里）：
-plugin_manager install_bundle "https://github.com/good-saltfish/dsh-auto-rerun/releases/latest/download/dsh-auto-rerun-1.8.3.tgz"
+plugin_manager install_bundle "https://github.com/good-saltfish/dsh-auto-rerun/releases/download/v1.8.4/dsh-auto-rerun-1.8.4.tgz"
 ```
 
 ```powershell
 # 或本地目录（开发调试用）：
-plugin_manager install_bundle "D:\\myproject\\dsh-auto-rerun"
+plugin_manager install_bundle "<你本机的仓库路径>"
 ```
 
 或 Plugin Manager 页面手动安装本地目录。安装后新会话即生效；
@@ -114,7 +114,7 @@ plugin_manager install_bundle "D:\\myproject\\dsh-auto-rerun"
 | `retryUntilSuccess` | `true` | **核心场景（免费模型容易堵）**：同一个模型、同一个会话内，只要失败不是"一定的报错"（死路：401/403、订阅过期、key 失效、永久没额度），就一直重连直到跑通，计数预算和时间预算都不拦（退避仍封顶：限流最长 180s、文本提示最长 60s 一次，不会打爆端点）。日志里预算栏显示 `until-success #N`。设 `false` 回到 1.5.x 的预算制 |
 | `retryUntilSuccessMaxMs` | `7200000` | **「一直重试」的天花板**：连续这么久都没跑通过任何一条请求，就把失败交还宿主（日志写 `until-success window spent (…s >= …s)`）。没有它，路线彻底坏掉时会永远静默重连、把错误藏起来，用户只觉得卡住。`0` = 不设上限 |
 | `modelFallback.enabled` | `false` | **选模型重试**开关（1.6.0 起默认关：老大的要求是「就守着一个模型重试」）。开 = true 时，同一条路线连续失败后可换 provider/model 再试 |
-| `fallbackRoutes` | `[]` | 钉死的候选路线，按优先级写 `"provider/model"`（如 `["qiniu/q"]`）。留空则从 `ctx.llm` 目录自动挑，优先「同 model id 的另一 provider」 |
+| `fallbackRoutes` | `[]` | 钉死的候选路线，按优先级写 `"provider/model"`（如 `["other-provider/model-id"]`）。留空则从 `ctx.llm` 目录自动挑，优先「同 model id 的另一 provider」 |
 | `fallbackAfterFailures` | `2` | 换路线的下限：该路线连续失败至少这么多次，且满足下面的触发条件，才换 |
 | `fallbackAfterMs` | `300000` | **`retryUntilSuccess` 模式下的换路线触发条件**：在同一路线上连续失败超过这么久才换。该模式下计数预算永不耗尽，只有时间是"真的跑不通"的信号——没有它，面板上的选模型重试开关会静默失效 |
 | `fallbackMaxSwitches` | `2` | 单次事故最多换几次路线（每次换完重置计数预算与新路线自己的时间窗口） |
@@ -417,8 +417,8 @@ Layer A 的接管、`retryUntilSuccessMaxMs` 的收手与 Layer C 的换路线�
   （宿主自己的数据目录，和 DSH 解析数据的规则一致），显式写 `settingsFile: ""` 才回到
   纯内存。解析逻辑内联在 `dshHome()` 里，不 import 宿主的 `@deepseek-ai/dsh-home-paths`——
   纯宿主插件不能假定那个包在它的安装目录里解析得到。
-- **`logFile` 默认不再写盘**：`cordis.patch.yml` 里原来钉的是作者本机的
-  `D:\myproject\_scratch\auto-rerun.log`，别人装会往不存在的目录写。现在这一行被注释掉，
+- **`logFile` 默认不再写盘**：`cordis.patch.yml` 里原来钉的是作者本机的一个绝对路径，
+  别人装会往不存在的目录写。现在这一行被注释掉，
   并新增环境变量 `DSH_AUTO_RERUN_LOG` —— 手动测试时设个路径就能开日志，不用改配置。
 - **发布元数据**：`package.json` 补 `repository` / `homepage` / `bugs` / `author`，
   `files` 带上 `LICENSE`；仓库补 `LICENSE`（MIT）与 `.gitignore`（忽略日志、面板状态文件、

@@ -2,7 +2,7 @@
 // Verifies: pass-through of non-disconnect codes, Layer A takeover on
 // disconnect-class terminal, budget cap, Layer B scheduling + cap.
 import { setTimeout as delay } from "node:timers/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -339,7 +339,7 @@ console.log("== 17. hint window clamps + mount line stamps the real version ==")
 console.log("== 18. a busy route keeps reconnecting instead of dropping the turn ==");
 {
   // The reported bug: "route too busy ⇒ it just disconnects instead of
-  // reconnecting". Live log: qiniu 429 x3 (26s/62s/103s) then
+  // reconnecting". Live log: alpha 429 x3 (26s/62s/103s) then
   // "layer A budget exhausted ... letting the failure close the turn".
   const cfg = {
     ...FAST, retries: 2, jitterRatio: 0, busyRouteBudgetMs: 400,
@@ -348,7 +348,7 @@ console.log("== 18. a busy route keeps reconnecting instead of dropping the turn
   };
   const ctx = makeCtx(cfg);
   const busyPayload = {
-    agent: { id: "a18" }, provider: "qiniu", model: "q",
+    agent: { id: "a18" }, provider: "alpha", model: "q",
     failure: { code: "RATE_LIMIT", status: 429, message: "Too many requests for this free model (request_id: chatcmpl-abc)" },
   };
   const kinds = [];
@@ -409,7 +409,7 @@ console.log("== 21. a dying route is switched durably through sessionController 
   };
   const ctx = makeCtx(cfg, { sessionController });
   const agent = { id: "a21" };
-  const payload = { agent, provider: "qiniu", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } };
+  const payload = { agent, provider: "alpha", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } };
   const first = await ctx.fireRequestError(payload, undefined);
   ok(first?.kind === "retry" && calls.length === 0, "the first failure is retried on the same route");
   const r = await ctx.fireRequestError(payload, undefined);
@@ -417,7 +417,7 @@ console.log("== 21. a dying route is switched durably through sessionController 
   ok(calls.length === 1 && calls[0].selection.provider === "backup" && calls[0].selection.model === "model-b",
     `a model/selection switch is recorded (${JSON.stringify(calls[0]?.selection)})`);
   ok(calls[0]?.agent === agent, "the switch is recorded for this agent");
-  ok(ctx._logs.join("\n").includes("model fallback: qiniu/q → backup/model-b"), "the switch is logged with both routes");
+  ok(ctx._logs.join("\n").includes("model fallback: alpha/q → backup/model-b"), "the switch is logged with both routes");
   ok(ctx._logs.join("\n").includes("the session continues on backup/model-b"), "log states the durable outcome");
 
   // Durable means the host owns the route now: this plugin must not rewrite
@@ -425,8 +425,8 @@ console.log("== 21. a dying route is switched durably through sessionController 
   // moves the route back would be silently overruled.
   const asked = await ctx.fireRequest({ agent }, { provider: "backup", model: "model-b" });
   ok(asked.provider === "backup" && asked.model === "model-b", "a request already on the wanted route is left alone");
-  const back = await ctx.fireRequest({ agent }, { provider: "qiniu", model: "q" });
-  ok(back.provider === "qiniu" && back.model === "q", "no silent rewrite once the host owns the selection");
+  const back = await ctx.fireRequest({ agent }, { provider: "alpha", model: "q" });
+  ok(back.provider === "alpha" && back.model === "q", "no silent rewrite once the host owns the selection");
 }
 
 console.log("== 22. without a session controller the override carries one request ==");
@@ -439,16 +439,16 @@ console.log("== 22. without a session controller the override carries one reques
   const agent = { id: "a22" };
   for (let i = 0; i < 2; i++) {
     await ctx.fireRequestError(
-      { agent, provider: "qiniu", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
+      { agent, provider: "alpha", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
   }
   ok(ctx._logs.join("\n").includes("applied to the next request only"), "fallback path is logged as transient");
 
-  const rewritten = await ctx.fireRequest({ agent }, { provider: "qiniu", model: "q", reasoningEffort: "high", maxTokens: 4096 });
+  const rewritten = await ctx.fireRequest({ agent }, { provider: "alpha", model: "q", reasoningEffort: "high", maxTokens: 4096 });
   ok(rewritten.provider === "backup" && rewritten.model === "model-b", "the retried request is moved to the backup route");
   ok(rewritten.reasoningEffort === undefined, "inherited reasoning effort is dropped for the new model");
   ok(rewritten.maxTokens === 4096, "the rest of the call config survives");
 
-  const kept = await ctx.fireRequest({ agent }, { provider: "qiniu", model: "q" });
+  const kept = await ctx.fireRequest({ agent }, { provider: "alpha", model: "q" });
   ok(kept.provider === "backup", "the fallback stays in force for the rest of the incident");
   const foreign = await ctx.fireRequest({ agent }, { provider: "third", model: "x" });
   ok(foreign.provider === "third" && foreign.model === "x", "a route moved by someone else drops the override");
@@ -459,8 +459,8 @@ console.log("== 23. the live catalog supplies candidates when none are pinned ==
 {
   const resolved = [];
   const llm = {
-    listProviders: async () => [{ id: "qiniu" }, { id: "backup" }],
-    listModels: async (id) => (id === "qiniu" ? [{ id: "q" }] : [{ id: "model-b" }]),
+    listProviders: async () => [{ id: "alpha" }, { id: "backup" }],
+    listModels: async (id) => (id === "alpha" ? [{ id: "q" }] : [{ id: "model-b" }]),
     resolveModelInfo: async (provider, model) => { resolved.push(`${provider}/${model}`); return {}; },
   };
   const calls = [];
@@ -470,7 +470,7 @@ console.log("== 23. the live catalog supplies candidates when none are pinned ==
   const agent = { id: "a23" };
   for (let i = 0; i < 2; i++) {
     await ctx.fireRequestError(
-      { agent, provider: "qiniu", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "rate limit reached for RPM" } }, undefined);
+      { agent, provider: "alpha", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "rate limit reached for RPM" } }, undefined);
   }
   ok(calls.length === 1 && calls[0].provider === "backup" && calls[0].model === "model-b",
     `catalog fallback picks another provider (${JSON.stringify(calls[0])})`);
@@ -481,11 +481,11 @@ console.log("== 24. fallback obeys its switch budget and its off switch ==");
 {
   const base = { ...FAST, retries: 1, busyRouteBudgetMs: 60000, jitterRatio: 0, fallbackAfterFailures: 1, fallbackMaxSwitches: 1 };
   const off = makeCtx({ ...base, modelFallback: { enabled: false } }, { sessionController: { agents: { selectForNextRequest: () => { throw new Error("must not be called"); } } } });
-  await off.fireRequestError({ agent: { id: "a24a" }, provider: "qiniu", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
+  await off.fireRequestError({ agent: { id: "a24a" }, provider: "alpha", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
   ok(!/model fallback: \S+ →/.test(off._logs.join("\n")), "modelFallback.enabled=false never switches");
 
   const capped = makeCtx({ ...base, fallbackRoutes: ["b1/m1", "b2/m2"] }, { sessionController: { agents: { selectForNextRequest: () => {} } } });
-  const payload = { agent: { id: "a24b" }, provider: "qiniu", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } };
+  const payload = { agent: { id: "a24b" }, provider: "alpha", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } };
   for (let i = 0; i < 4; i++) await capped.fireRequestError(payload, undefined);
   const switches = (capped._logs.join("\n").match(/model fallback: \S+ →/g) ?? []).length;
   ok(switches === 1, `fallbackMaxSwitches=1 allows exactly one switch (saw ${switches})`);
@@ -493,7 +493,7 @@ console.log("== 24. fallback obeys its switch budget and its off switch ==");
 
 console.log("== 25. route strings parse and key the same way ==");
 {
-  ok(JSON.stringify(mod.__parseRoute("qiniu/q")) === JSON.stringify({ provider: "qiniu", model: "q" }), "simple route parses");
+  ok(JSON.stringify(mod.__parseRoute("alpha/q")) === JSON.stringify({ provider: "alpha", model: "q" }), "simple route parses");
   ok(mod.__parseRoute("openrouter/vendor/model-1").model === "vendor/model-1", "the model keeps its own slashes");
   ok(mod.__parseRoute("no-slash") === undefined && mod.__parseRoute("/x") === undefined && mod.__parseRoute("x/") === undefined,
     "malformed routes are rejected");
@@ -505,15 +505,15 @@ console.log("== 26. the same model on another provider wins the catalog ==");
   // identical while escaping the throttled bucket — that must beat an
   // arbitrary different model.
   const llm = {
-    listProviders: async () => [{ id: "qiniu" }, { id: "backup" }, { id: "other" }],
-    listModels: async (id) => (id === "qiniu" ? [{ id: "q" }] : id === "backup" ? [{ id: "q" }] : [{ id: "something-else" }]),
+    listProviders: async () => [{ id: "alpha" }, { id: "backup" }, { id: "other" }],
+    listModels: async (id) => (id === "alpha" ? [{ id: "q" }] : id === "backup" ? [{ id: "q" }] : [{ id: "something-else" }]),
   };
   const calls = [];
   const cfg = { ...FAST, retries: 1, busyRouteBudgetMs: 60000, jitterRatio: 0, fallbackAfterFailures: 1, fallbackMaxSwitches: 1 };
   const ctx = makeCtx(cfg, { llm, sessionController: { agents: { selectForNextRequest: (_a, s) => calls.push(s) } } });
   for (let i = 0; i < 2; i++) {
     await ctx.fireRequestError(
-      { agent: { id: "a26" }, provider: "qiniu", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
+      { agent: { id: "a26" }, provider: "alpha", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
   }
   ok(calls.length === 1 && calls[0].provider === "backup" && calls[0].model === "q",
     `same model id on another provider is preferred (${JSON.stringify(calls[0])})`);
@@ -524,11 +524,11 @@ console.log("== 27. the log names the real route, not \"unknown\" ==");
   // The payload has no model field; the session header does. An honest label
   // matters because it is also the `from` side of a fallback switch.
   const ctx = makeCtx({ ...FAST, retries: 1, busyRouteBudgetMs: 60000, jitterRatio: 0 });
-  const agent = { id: "a27", session: { requestHeader: () => ({ config: { provider: "qiniu", model: "conatus-free" } }) } };
+  const agent = { id: "a27", session: { requestHeader: () => ({ config: { provider: "alpha", model: "alpha-free" } }) } };
   await ctx.fireRequestError(
-    { agent, provider: "qiniu", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
+    { agent, provider: "alpha", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
   const line = ctx._logs.find((l) => l.includes("taking over")) ?? "";
-  ok(line.includes("route qiniu/conatus-free"), `takeover log uses the session header route (${line.slice(0, 60)}…)`);
+  ok(line.includes("route alpha/alpha-free"), `takeover log uses the session header route (${line.slice(0, 60)}…)`);
   ok(!line.includes("unknown"), "no more unknown route in the label");
 }
 
@@ -558,13 +558,13 @@ console.log("== 28. the per-agent guard outranks a later host listener ==");
   // The host's model-selection listener: always claims its own frozen route.
   ctx.on("agent/request", async (payload, next) => {
     const config = await next();
-    return { ...config, provider: "qiniu", model: "q" };
+    return { ...config, provider: "alpha", model: "q" };
   }, { prepend: true });
   for (let i = 0; i < 2; i++) {
     await ctx.fireRequestError(
-      { agent, provider: "qiniu", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
+      { agent, provider: "alpha", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
   }
-  const forced = await ctx.fireRequest({ agent }, { provider: "qiniu", model: "q" });
+  const forced = await ctx.fireRequest({ agent }, { provider: "alpha", model: "q" });
   ok(forced.provider === "backup" && forced.model === "model-b",
     `the switch survives the host's own listener (${forced.provider}/${forced.model})`);
 }
@@ -584,19 +584,19 @@ console.log("== 29. no catalogue and nothing pinned: routes seen in this process
   const agent = { id: "a29" };
   for (let i = 0; i < 2; i++) {
     await ctx.fireRequestError(
-      { agent, provider: "qiniu", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
+      { agent, provider: "alpha", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
   }
   const line = ctx._logs.find((l) => /model fallback: \S+ →/.test(l)) ?? "";
   ok(line.includes("qoder-cn/DeepSeek-Flash"), `the recently seen route becomes the fallback (${line.slice(0, 70)}…)`);
-  const forced = await ctx.fireRequest({ agent }, { provider: "qiniu", model: "q" });
+  const forced = await ctx.fireRequest({ agent }, { provider: "alpha", model: "q" });
   ok(forced.provider === "qoder-cn" && forced.model === "DeepSeek-Flash", "the retried request runs on it");
 }
 
 console.log("== 30. candidate order: pinned → same model elsewhere → routes seen here → catalogue ==");
 {
   const llm = {
-    listProviders: async () => [{ id: "qiniu" }, { id: "alpha" }, { id: "beta" }],
-    listModels: async (provider) => ({ qiniu: [{ id: "q" }], alpha: [{ id: "x" }], beta: [{ id: "q" }, { id: "y" }] })[provider] ?? [],
+    listProviders: async () => [{ id: "alpha" }, { id: "alpha" }, { id: "beta" }],
+    listModels: async (provider) => ({ alpha: [{ id: "q" }], alpha: [{ id: "x" }], beta: [{ id: "q" }, { id: "y" }] })[provider] ?? [],
     resolveModelInfo: async () => ({ id: "ok" }),
   };
   const ctx = makeCtx({ ...FAST, retries: 1, busyRouteBudgetMs: 60000, jitterRatio: 0, fallbackAfterFailures: 1, fallbackMaxSwitches: 1 }, { llm });
@@ -605,10 +605,10 @@ console.log("== 30. candidate order: pinned → same model elsewhere → routes 
   await ctx.fireRequest({ agent: { id: "a30-other" } }, { provider: "beta", model: "y" });
   for (let i = 0; i < 2; i++) {
     await ctx.fireRequestError(
-      { agent, provider: "qiniu", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
+      { agent, provider: "alpha", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
   }
   const line = ctx._logs.find((l) => /model fallback: \S+ →/.test(l)) ?? "";
-  ok(line.includes("qiniu/q → beta/q"), `the same model id on another provider leads (${line.slice(0, 80)}…)`);
+  ok(line.includes("alpha/q → beta/q"), `the same model id on another provider leads (${line.slice(0, 80)}…)`);
 }
 
 console.log("== 31. a dead route (expired subscription) switches instead of waiting ==");
@@ -638,7 +638,7 @@ console.log("== 32. throttling is congestion, not a dead end ==");
   const ctx = makeCtx({ ...FAST, retries: 2, jitterRatio: 0, fallbackAfterFailures: 1, fallbackMaxSwitches: 2 }, {});
   const agent = { id: "a32" };
   const decision = await ctx.fireRequestError(
-    { agent, provider: "qiniu", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
+    { agent, provider: "alpha", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
   ok(decision?.kind === "retry", "a throttled route is still retried in place");
   ok(!ctx._logs.some((l) => /is unusable/.test(l)), "and is never marked unusable");
 }
@@ -688,12 +688,12 @@ console.log("== 35. a quiet stretch ALONE does not close an incident ==");
   // `retryUntilSuccessMaxMs` nor `fallbackAfterMs` could ever fire.
   const ctx = makeCtx({ ...FAST, retries: 3, jitterRatio: 0, incidentGapMs: 40 }, {});
   const agent = { id: "a35", session: { id: "s35" } };
-  const payload = { agent, provider: "qiniu", model: "q", failure: { code: "TRANSPORT", message: "socket hang up" } };
+  const payload = { agent, provider: "alpha", model: "q", failure: { code: "TRANSPORT", message: "socket hang up" } };
   const first = await ctx.fireRequestError(payload, undefined);
   ok(first?.kind === "retry", "first failure is retried");
   ok(ctx._logs.some((l) => /retry 1\/3/.test(l)), "counted as attempt 1 of 3");
   await delay(60); // longer than incidentGapMs, but nothing was served
-  await ctx.fireRequest({ agent }, { provider: "qiniu", model: "q" });
+  await ctx.fireRequest({ agent }, { provider: "alpha", model: "q" });
   const second = await ctx.fireRequestError(payload, undefined);
   ok(second?.kind === "retry", "the later failure is still retried");
   ok(ctx._logs.some((l) => /retry 2\/3/.test(l)), "the count budget kept counting: silence alone reset nothing");
@@ -709,13 +709,13 @@ console.log("== 44. session/event is (session, event), and a served message clos
   // turn-completion reset and the served-proof had both been dead code.
   const agent = { id: "a44", session: { id: "s44" } };
   const ctx = makeCtx({ ...FAST, retries: 3, jitterRatio: 0, incidentGapMs: 40 }, { agentsList: [agent] });
-  const payload = { agent, provider: "qiniu", model: "q", failure: { code: "TRANSPORT", message: "socket hang up" } };
+  const payload = { agent, provider: "alpha", model: "q", failure: { code: "TRANSPORT", message: "socket hang up" } };
   await ctx.fireRequestError(payload, undefined);
   ok(ctx._logs.some((l) => /retry 1\/3/.test(l)), "attempt 1 of 3");
   await delay(60);
   // The route answered: one durable assistant message.
   await ctx.fireSessionEvent(agent.session, { type: "assistant/message", message: { id: "m1", role: "assistant", content: [] } });
-  await ctx.fireRequest({ agent }, { provider: "qiniu", model: "q" });
+  await ctx.fireRequest({ agent }, { provider: "alpha", model: "q" });
   const served = await ctx.fireRequestError(payload, undefined);
   ok(served?.kind === "retry", "still retried after a served request");
   ok(ctx._logs.filter((l) => /retry 1\/3/.test(l)).length === 2,
@@ -732,12 +732,12 @@ console.log("== 44. session/event is (session, event), and a served message clos
   // through its successful replies.
   const flapping = { id: "a44b", session: { id: "s44b" } };
   const ctxFlap = makeCtx({ ...FAST, retryUntilSuccess: true, retryUntilSuccessMaxMs: 400, retries: 1, jitterRatio: 0, incidentGapMs: 600000 }, { agentsList: [flapping] });
-  const flapPayload = { agent: flapping, provider: "qiniu", model: "q", failure: { code: "TRANSPORT", message: "socket hang up" } };
+  const flapPayload = { agent: flapping, provider: "alpha", model: "q", failure: { code: "TRANSPORT", message: "socket hang up" } };
   await ctxFlap.fireRequestError(flapPayload, undefined);
   await delay(200);
   await ctxFlap.fireSessionEvent(flapping.session, { type: "assistant/message", data: { turn: 1, step: 1, message: { id: "mF" } } });
   await delay(200);
-  await ctxFlap.fireRequest({ agent: flapping }, { provider: "qiniu", model: "q" });
+  await ctxFlap.fireRequest({ agent: flapping }, { provider: "alpha", model: "q" });
   const flap = await ctxFlap.fireRequestError(flapPayload, undefined);
   ok(flap?.kind === "retry",
     "a served answer restarted the until-success window, so a flapping route keeps retrying");
@@ -759,11 +759,11 @@ console.log("== 44. session/event is (session, event), and a served message clos
   // mistaken for "the route worked".
   const agent2 = { id: "a45b", session: { id: "s45b" } };
   const ctx3 = makeCtx({ ...FAST, retries: 3, jitterRatio: 0, incidentGapMs: 40 }, { agentsList: [agent2] });
-  const payload3 = { agent: agent2, provider: "qiniu", model: "q", failure: { code: "TRANSPORT", message: "socket hang up" } };
+  const payload3 = { agent: agent2, provider: "alpha", model: "q", failure: { code: "TRANSPORT", message: "socket hang up" } };
   await ctx3.fireRequestError(payload3, undefined);
   await delay(60);
   await ctx3.fireSessionEvent(agent2.session, { type: "assistant/message", data: { turn: 1, step: 1, interrupted: true, message: { id: "mI" } } });
-  await ctx3.fireRequest({ agent: agent2 }, { provider: "qiniu", model: "q" });
+  await ctx3.fireRequest({ agent: agent2 }, { provider: "alpha", model: "q" });
   await ctx3.fireRequestError(payload3, undefined);
   ok(ctx3._logs.some((l) => /retry 2\/3/.test(l)),
     "an interrupted assistant frame does not count as a served request");
@@ -777,13 +777,13 @@ console.log("== 45. a success that PREDATES the failure is not proof of recovery
   // close the incident on data that is older than the failure itself.
   const agent = { id: "a45", session: { id: "s45" } };
   const ctx = makeCtx({ ...FAST, retries: 4, jitterRatio: 0, incidentGapMs: 40 }, { agentsList: [agent] });
-  const payload = { agent, provider: "qiniu", model: "q", failure: { code: "TRANSPORT", message: "socket hang up" } };
-  await ctx.fireRequest({ agent }, { provider: "qiniu", model: "q" });
+  const payload = { agent, provider: "alpha", model: "q", failure: { code: "TRANSPORT", message: "socket hang up" } };
+  await ctx.fireRequest({ agent }, { provider: "alpha", model: "q" });
   await ctx.fireSessionEvent(agent.session, { type: "assistant/message", message: { id: "mA", role: "assistant", content: [] } });
   ok((await ctx.fireRequestError(payload, undefined))?.kind === "retry", "the failure after a good answer is retried");
   ok(ctx._logs.some((l) => /retry 1\/4/.test(l)), "counted as attempt 1 of 4");
   await delay(60); // quiet, but the last thing the route did was fail
-  await ctx.fireRequest({ agent }, { provider: "qiniu", model: "q" });
+  await ctx.fireRequest({ agent }, { provider: "alpha", model: "q" });
   ok((await ctx.fireRequestError(payload, undefined))?.kind === "retry", "the next failure is retried too");
   ok(ctx._logs.some((l) => /retry 2\/4/.test(l)),
     "the stamp predates the failure, so the incident clock was NOT cleared");
@@ -797,7 +797,7 @@ console.log("== 36. retryUntilSuccess (the 1.6.0 default): a blocked free model 
   const ctx = makeCtx({ ...FAST, retryUntilSuccess: true, busyRouteBudgetMs: 400 });
   ok(ctx._logs.some((l) => /retry-until-success: on/.test(l)), "the mount line advertises retry-until-success");
   const agent = { id: "a36" };
-  const payload = { agent, provider: "qiniu", failure: { code: "RATE_LIMIT", status: 429, message: "Too many requests for this free model" } };
+  const payload = { agent, provider: "alpha", failure: { code: "RATE_LIMIT", status: 429, message: "Too many requests for this free model" } };
   const decisions = [];
   for (let i = 0; i < 8; i++) decisions.push(await ctx.fireRequestError(payload, undefined));
   ok(decisions.every((d) => d?.kind === "retry"), "all 8 throttled attempts reconnect (no count budget in the way)");
@@ -810,7 +810,7 @@ console.log("== 37. relentless also covers plain disconnect blips, not only thro
 {
   const ctx = makeCtx({ ...FAST, retryUntilSuccess: true });
   const agent = { id: "a37" };
-  const payload = { agent, provider: "qiniu", failure: { code: "TRANSPORT", message: "socket hang up" } };
+  const payload = { agent, provider: "alpha", failure: { code: "TRANSPORT", message: "socket hang up" } };
   const decisions = [];
   for (let i = 0; i < 5; i++) decisions.push(await ctx.fireRequestError(payload, undefined));
   ok(decisions.every((d) => d?.kind === "retry"), "a flaky link is retried past retries=2 as well");
@@ -822,7 +822,7 @@ console.log("== 38. retryUntilSuccess:false restores the 1.5.x budget behaviour 
   const ctx = makeCtx({ ...FAST, retryUntilSuccess: false, retries: 2, busyRouteBudgetMs: 600000, jitterRatio: 0 });
   ok(ctx._logs.some((l) => /busy-route budget: 600s/.test(l)), "the mount line falls back to the busy-route budget wording");
   const agent = { id: "a38" };
-  const payload = { agent, provider: "qiniu", failure: { code: "TRANSPORT", message: "socket hang up" } };
+  const payload = { agent, provider: "alpha", failure: { code: "TRANSPORT", message: "socket hang up" } };
   ok((await ctx.fireRequestError(payload, undefined))?.kind === "retry", "attempt 1 retried");
   ok((await ctx.fireRequestError(payload, undefined))?.kind === "retry", "attempt 2 retried");
   const third = await ctx.fireRequestError(payload, undefined);
@@ -837,7 +837,7 @@ console.log("== 39. a definite error still stops everything, relentless or not =
   // must surface them instead of hammering.
   const ctx = makeCtx({ ...FAST, retryUntilSuccess: true, retries: 1, busyRouteBudgetMs: 60000 });
   const agent = { id: "a39" };
-  const payload = { agent, provider: "qiniu", failure: { code: "AUTH", message: "Your subscription has expired" } };
+  const payload = { agent, provider: "alpha", failure: { code: "AUTH", message: "Your subscription has expired" } };
   const first = await ctx.fireRequestError(payload, undefined);
   ok(first?.kind !== "retry", "an expired subscription is NOT retried even in relentless mode");
   ok(ctx._logs.some((l) => /is unusable \(the route reported AUTH\)/.test(l)), "the log names the dead-route reason");
@@ -1131,8 +1131,8 @@ console.log("== 41. settingsFile defaults to a portable path, never a machine-lo
     const auto = mod.__mergeConfig({});
     ok(typeof auto.settingsFile === "string" && auto.settingsFile.endsWith("auto-rerun-settings.json"),
       `settingsFile defaults to the host data dir (${auto.settingsFile})`);
-    ok(!/^[A-Za-z]:\\myproject|_scratch/.test(auto.settingsFile),
-      "the default carries no author machine path");
+    ok(join(homedir(), ".dsh", "auto-rerun-settings.json") === auto.settingsFile,
+      `the default lands in the host data dir, not an author-specific path (${auto.settingsFile})`);
 
     process.env.DSH_HOME = join(tmpdir(), "dsh-home-probe");
     const env = mod.__mergeConfig({});
@@ -1173,7 +1173,7 @@ console.log("== 42. retryUntilSuccess has a ceiling, so a hopeless route cannot 
   ok(infinite._logs.some((l) => /or never\)/.test(l)),
     "and an explicit 0 says never rather than 0s");
   const agent = { id: "a42" };
-  const payload = { agent, provider: "qiniu", failure: { code: "TRANSPORT", message: "socket hang up" } };
+  const payload = { agent, provider: "alpha", failure: { code: "TRANSPORT", message: "socket hang up" } };
   ok((await ctx.fireRequestError(payload, undefined))?.kind === "retry", "inside the window it keeps retrying");
   await new Promise((r) => setTimeout(r, 60));
   const late = await ctx.fireRequestError(payload, undefined);
@@ -1318,14 +1318,14 @@ console.log("== 49. a host-owned switch keeps its guard armed against the stale 
   const agent = { id: "a49" };
   for (let i = 0; i < 2; i++) {
     await ctx.fireRequestError(
-      { agent, provider: "qiniu", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
+      { agent, provider: "alpha", model: "q", failure: { code: "RATE_LIMIT", status: 429, message: "tpm exhausted" } }, undefined);
   }
-  ok(ctx._logs.join("\n").includes("model fallback: qiniu/q → backup/model-b"), "the host-owned switch is recorded");
+  ok(ctx._logs.join("\n").includes("model fallback: alpha/q → backup/model-b"), "the host-owned switch is recorded");
 
   // The stale-assembled request: the host still hands out the OLD route, as it
   // will inside a step's retry loop until the next assemble. Before the fix
   // this passed through untouched and the turn died on the old route.
-  const stale = await ctx.fireRequest({ agent }, { provider: "qiniu", model: "q" });
+  const stale = await ctx.fireRequest({ agent }, { provider: "alpha", model: "q" });
   ok(stale.provider === "backup" && stale.model === "model-b",
     `a stale pre-assemble request is still forced onto the new route (${stale.provider}/${stale.model})`);
 
