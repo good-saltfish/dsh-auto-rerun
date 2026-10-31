@@ -1,6 +1,6 @@
 {
   "name": "dsh-auto-rerun",
-  "version": "1.8.3",
+  "version": "1.8.4",
   "description": "模型断连自动重跑：同一会话内守住当前模型一直重试直到跑通（免费模型易堵塞；退避封顶），只有订阅过期/key 失效这类死路报错才停；另可选回合级 followup 续跑与选模型重试（默认关），并在右侧栏提供运行状态与开关面板。Keep a turn alive across provider hiccups: retries the same model in-session until it succeeds, stops only on dead routes (expired subscription / bad key), with optional turn-level followup, model fallback and a right-sidebar panel.",
   "type": "module",
   "main": "index.js",
@@ -24,7 +24,10 @@
     "locale/zh.json",
     "test/inject-shape.test.mjs",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "screenshots.json",
+    "docs/screenshots/panel.png",
+    "docs/screenshots/retry-inline.png"
   ],
   "keywords": [
     "deepseek-harness",
